@@ -37,13 +37,21 @@ else()
 
   message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}:")
   message(STATUS "   - CMake module path  : ${LLVM_CMAKE_DIR}")
-  message(STATUS "   - Clang include path : ${CLANG_INCLUDE_DIRS}")
-  message(STATUS "   - LLVM Include path  : ${LLVM_INCLUDE_DIRS}")
+  message(STATUS "   - Include path  : ${LLVM_INCLUDE_DIRS}")
   message(STATUS "   - Binary path        : ${LLVM_TOOLS_BINARY_DIR}")
+    message(STATUS "   - Library path        : ${LLVM_LIBRARY_DIRS}")
+  message(STATUS "Found Clang:")
+  message(STATUS "   - CMake module path : ${CLANG_CMAKE_DIR}")
+  message(STATUS "   - include path : ${CLANG_INCLUDE_DIRS}")
+  
+  
 endif()
 
 list(APPEND CMAKE_MODULE_PATH ${LLVM_CMAKE_DIR})
 include(AddLLVM)
+include(LLVMConfig)
+list(APPEND CMAKE_MODULE_PATH ${CLANG_CMAKE_DIR})
+include(AddClang)
 
 if (NOT HIPIFY_CLANG_TESTS_ONLY)
   if(MSVC AND MSVC_VERSION VERSION_LESS "1900")
@@ -87,7 +95,42 @@ if (NOT HIPIFY_CLANG_TESTS_ONLY)
   endif()
 
   # Link against LLVM and CLANG libraries.
-  target_link_libraries(hipify-clang PRIVATE
+  #target_link_libraries(hipify-clang PRIVATE
+  #  clangASTMatchers
+  #  clangFrontend
+  #  clangTooling
+  #  clangParse
+  #  clangSerialization
+  #  clangSema
+  #  clangEdit
+  #  clangFormat
+  #  clangLex
+  #  clangAnalysis
+  #  clangDriver
+  #  clangAST
+  #  clangToolingCore
+  #  clangRewrite
+  #  clangBasic
+  #  LLVMProfileData
+  #  LLVMSupport
+  #  LLVMMCParser
+  #  LLVMMC
+  #  LLVMBitReader
+  #  LLVMOption
+  #  LLVMCore)
+  
+  # TODO: the correct variable to use would be LLVM_BUILD_LLVM_DYLIB, 
+  # 	  but that one is not exported.
+  if(LLVM_LINK_LLVM_DYLIB)
+  	set(useshared USE_SHARED)
+  endif()
+  
+  # TODO: Currently the dynamic libraries are added multiple times by the
+  #		  multiple clang_target_link_libraries and llvm_config calls.
+  #       Instead one should compile the list of modules first and then
+  #       link all of them at once with one call to clang_target_link_libraries
+  #       and llvm_config calls respectively.
+  clang_target_link_libraries(hipify-clang PRIVATE 
     clangASTMatchers
     clangFrontend
     clangTooling
@@ -102,26 +145,31 @@ if (NOT HIPIFY_CLANG_TESTS_ONLY)
     clangAST
     clangToolingCore
     clangRewrite
-    clangBasic
-    LLVMProfileData
-    LLVMSupport
-    LLVMMCParser
-    LLVMMC
-    LLVMBitReader
-    LLVMOption
-    LLVMCore)
-
+    clangBasic)
+  llvm_config(hipify-clang ${useshared}
+  	profiledata 
+  	support
+  	mcparser
+  	mc
+  	bitreader
+  	option
+  	core)
+  
   if(LLVM_PACKAGE_VERSION VERSION_GREATER "6.0.1")
-    target_link_libraries(hipify-clang PRIVATE clangToolingInclusions)
+    clang_target_link_libraries(hipify-clang PRIVATE clangToolingInclusions)
   endif()
 
   if(LLVM_PACKAGE_VERSION VERSION_GREATER "9.0.1")
-    target_link_libraries(hipify-clang PRIVATE LLVMFrontendOpenMP)
+    llvm_config(hipify-clang ${useshared} frontendopenmp)
   endif()
 
   if(LLVM_PACKAGE_VERSION VERSION_EQUAL "15.0.0" OR LLVM_PACKAGE_VERSION VERSION_GREATER "15.0.0")
-    target_link_libraries(hipify-clang PRIVATE LLVMWindowsDriver clangSupport)
+  	llvm_config(hipify-clang ${useshared} windowsdriver)
+    clang_target_link_libraries(hipify-clang PRIVATE clangSupport)
   endif()
+  
+  get_target_property(LL hipify-clang LINK_LIBRARIES)
+  message(STATUS "Components mapped by llvm_config: ${LL}")
 
   if(LLVM_PACKAGE_VERSION VERSION_EQUAL "16.0.0" OR LLVM_PACKAGE_VERSION VERSION_GREATER "16.0.0")
     if(MSVC)
